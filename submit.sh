@@ -1,4 +1,4 @@
-java -jar target/word-count-beam-bundled-0.1.jar \
+java -Dorg.slf4j.simpleLogger.defaultLogLevel=debug -jar target/word-count-beam-bundled-0.1.jar \
   --runner=DataflowRunner \
   --filesToStage=target/word-count-beam-bundled-0.1.jar \
   --project=meken-dataflow-test-01 \
@@ -7,9 +7,8 @@ java -jar target/word-count-beam-bundled-0.1.jar \
   --stagingLocation=gs://meken-dataflow-test-01/staging/ \
   --serviceAccount=sac-dataflow-worker@meken-dataflow-test-01.iam.gserviceaccount.com \
   --dataflowServiceOptions=streaming_mode_at_least_once \
-  --experiments=beam_fn_api \
   --enableStreamingEngine=true \
   --maxNumWorkers=4 \
   --usePublicIps=false \
   --workerMachineType=c2-standard-4 \
-  --jobName=kafka-v11
+  --jobName=kafka-v12
