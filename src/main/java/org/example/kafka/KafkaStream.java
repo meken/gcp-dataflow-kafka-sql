@@ -3,9 +3,10 @@ package org.example.kafka;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.options.*;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
-import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.beam.sdk.managed.Managed;
 import org.joda.time.Duration;
+
+import java.util.Map;
 
 public class KafkaStream {
 
@@ -33,21 +34,46 @@ public class KafkaStream {
     static void runKafkaStream(KafkaStream.KafkaStreamOptions options) {
         Pipeline p = Pipeline.create(options);
 
-        p
-            .apply("ReadSource", KafkaIO.<byte[], byte[]>read()
-                .withBootstrapServers(options.getBootstrapServer())
-                .withTopic(options.getInputTopic())
-                .withDynamicRead(Duration.standardMinutes(1))
-                .withGCPApplicationDefaultCredentials()
-                .withKeyDeserializer(ByteArrayDeserializer.class)
-                .withValueDeserializer(ByteArrayDeserializer.class)
-                .withoutMetadata())
-            .apply("WriteSink", KafkaIO.<byte[], byte[]>write()
-                .withBootstrapServers(options.getBootstrapServer())
-                .withTopic(options.getOutputTopic())
-                .withKeySerializer(ByteArraySerializer.class)
-                .withValueSerializer(ByteArraySerializer.class)
-                .withGCPApplicationDefaultCredentials());
+        Map<String, Object> auth = Map.<String, Object>of(
+            "security.protocol", "SASL_SSL",
+            "sasl.mechanism", "OAUTHBEARER",
+            "sasl.login.callback.handler.class",
+                    "com.google.cloud.hosted.kafka.auth.GcpLoginCallbackHandler",
+            "sasl.jaas.config",
+                    "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;"
+        );
+        Map<String, Object> inputConfig = Map.<String, Object>of(
+                "bootstrap_servers", options.getBootstrapServer(),
+                "topic", options.getInputTopic(),
+                "format", "RAW",
+                "consumer_config_updates", auth
+        );
+        Map<String, Object> outputConfig = Map.<String, Object>of(
+                "bootstrap_servers", options.getBootstrapServer(),
+                "topic", options.getOutputTopic(),
+                "format", "RAW",
+                "producer_config_updates", auth
+        );
+
+        p.apply(Managed.read(Managed.KAFKA).withConfig(inputConfig)).getSinglePCollection().
+                apply(Managed.write(Managed.KAFKA).withConfig(outputConfig));
+
+
+//        p
+//            .apply("ReadSource", KafkaIO.<byte[], byte[]>read()
+//                .withBootstrapServers(options.getBootstrapServer())
+//                .withTopic(options.getInputTopic())
+//                .withDynamicRead(Duration.standardMinutes(1))
+//                .withGCPApplicationDefaultCredentials()
+//                .withKeyDeserializer(ByteArrayDeserializer.class)
+//                .withValueDeserializer(ByteArrayDeserializer.class)
+//                .withoutMetadata())
+//            .apply("WriteSink", KafkaIO.<byte[], byte[]>write()
+//                .withBootstrapServers(options.getBootstrapServer())
+//                .withTopic(options.getOutputTopic())
+//                .withKeySerializer(ByteArraySerializer.class)
+//                .withValueSerializer(ByteArraySerializer.class)
+//                .withGCPApplicationDefaultCredentials());
         p.run().waitUntilFinish();
     }
 

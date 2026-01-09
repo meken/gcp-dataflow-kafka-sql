@@ -73,8 +73,8 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>${maven-compiler-plugin.version}</version>
         <configuration>
-          <source>1.8</source>
-          <target>1.8</target>
+          <source>19</source>
+          <target>19</target>
         </configuration>
       </plugin>
 
@@ -200,6 +200,12 @@
       <version>${beam.version}</version>
     </dependency>
 
+    <!-- https://mvnrepository.com/artifact/org.apache.beam/beam-sdks-java-managed -->
+    <dependency>
+      <groupId>org.apache.beam</groupId>
+      <artifactId>beam-sdks-java-managed</artifactId>
+      <version>${beam.version}</version>
+    </dependency>
     <!-- Adds a dependency on the Beam Google Cloud Platform IO module. -->
     <dependency>
       <groupId>org.apache.beam</groupId>
