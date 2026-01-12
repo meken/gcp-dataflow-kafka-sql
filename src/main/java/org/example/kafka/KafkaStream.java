@@ -4,7 +4,10 @@ import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
-import org.apache.beam.sdk.options.*;
+import org.apache.beam.sdk.options.Description;
+import org.apache.beam.sdk.options.Default;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.options.StreamingOptions;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
@@ -14,7 +17,7 @@ import java.util.Map;
 public class KafkaStream {
 
 
-    public interface KafkaStreamOptions extends PipelineOptions {
+    public interface KafkaStreamOptions extends StreamingOptions {
         @Description("Kafka input/source topic")
         @Default.String("src")
         String getInputTopic();
@@ -35,7 +38,7 @@ public class KafkaStream {
     }
 
     static void runKafkaStream(KafkaStream.KafkaStreamOptions options) {
-        Pipeline p = Pipeline.create(options);
+        Pipeline pipeline = Pipeline.create(options);
 
         Map<String, Object> auth = Map.<String, Object>of(
             "security.protocol", "SASL_SSL",
@@ -46,7 +49,7 @@ public class KafkaStream {
                     "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;"
         );
 
-        p
+        pipeline
                 .apply("Read from Kafka",
                         KafkaIO.<byte[], byte[]>read()
                             .withBootstrapServers(options.getBootstrapServer())
@@ -63,7 +66,7 @@ public class KafkaStream {
                             .withKeySerializer(ByteArraySerializer.class)
                             .withValueSerializer(ByteArraySerializer.class)
                             .withProducerConfigUpdates(auth));
-        p.run().waitUntilFinish();
+        pipeline.run().waitUntilFinish();
     }
 
     public static void main(String[] args) {
@@ -71,6 +74,7 @@ public class KafkaStream {
             .fromArgs(args)
             .withValidation()
             .as(KafkaStreamOptions.class);
+        options.setStreaming(true);
         runKafkaStream(options);
     }
 }
