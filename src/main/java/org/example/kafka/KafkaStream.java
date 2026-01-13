@@ -5,14 +5,17 @@ import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
-import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.Default;
+import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.StreamingOptions;
-import org.apache.beam.sdk.transforms.*;
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.MapElements;
+import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.values.KV;
-import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
+import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
@@ -70,13 +73,10 @@ public class KafkaStream {
         PCollectionView<Map<String, Integer>> filterData = pipeline
                 .apply("Read from GCS filter data",
                         TextIO.read().from(options.getFilterFileURI()))
-                .apply("Map to KV pairs", MapElements.via(new SimpleFunction<String, KV<String, Integer>>() {
-                    @Override
-                    public KV<String, Integer> apply(String input) {
-                        return KV.of(input, 1);
-                    }
-                }))
-                .apply(View.<String, Integer>asMap());
+                .apply("Map to KV pairs", MapElements
+                        .into(TypeDescriptors.kvs(TypeDescriptors.strings(), TypeDescriptors.integers()))
+                        .via(input -> KV.of(input, 1)))
+                .apply(View.asMap());
 
 
         pipeline
