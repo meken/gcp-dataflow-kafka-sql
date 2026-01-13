@@ -12,7 +12,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.stream.IntStream;
 
@@ -31,6 +30,12 @@ public class KafkaStream {
         String getOutputTopic();
 
         void setOutputTopic(String value);
+
+        @Description("Number of partitions for the input topic")
+        @Default.Integer(4)
+        int getPartitionCount();
+
+        void setPartitionCount(int value);
 
         @Description("Bootstrap server")
         @Default.String("bootstrap.kafka-cluster.us-central1.managedkafka.meken-dataflow-test-01.cloud.goog:9092")
@@ -55,8 +60,7 @@ public class KafkaStream {
                 .apply("Read from Kafka",
                         KafkaIO.<byte[], byte[]>read()
                                 .withBootstrapServers(options.getBootstrapServer())
-//                                .withTopics(Collections.singletonList(options.getInputTopic()))
-                                .withTopicPartitions(IntStream.range(0, 4)
+                                .withTopicPartitions(IntStream.range(0, options.getPartitionCount())
                                         .mapToObj(i -> new TopicPartition(options.getInputTopic(), i))
                                         .toList())
                                 .withKeyDeserializerAndCoder(
