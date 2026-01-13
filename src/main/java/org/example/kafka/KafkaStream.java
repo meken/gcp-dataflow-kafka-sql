@@ -8,11 +8,13 @@ import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.StreamingOptions;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 public class KafkaStream {
 
@@ -40,7 +42,7 @@ public class KafkaStream {
     static void runKafkaStream(KafkaStream.KafkaStreamOptions options) {
         Pipeline pipeline = Pipeline.create(options);
 
-        Map<String, Object> auth = Map.<String, Object>of(
+        Map<String, Object> auth = Map.of(
             "security.protocol", "SASL_SSL",
             "sasl.mechanism", "OAUTHBEARER",
             "sasl.login.callback.handler.class",
@@ -52,20 +54,23 @@ public class KafkaStream {
         pipeline
                 .apply("Read from Kafka",
                         KafkaIO.<byte[], byte[]>read()
-                            .withBootstrapServers(options.getBootstrapServer())
-                            .withTopics(Collections.singletonList(options.getInputTopic()))
-                            .withKeyDeserializerAndCoder(
-                                    ByteArrayDeserializer.class, NullableCoder.of(ByteArrayCoder.of()))
-                            .withValueDeserializerAndCoder(ByteArrayDeserializer.class, ByteArrayCoder.of())
-                            .withConsumerConfigUpdates(auth)
-                            .withoutMetadata())
+                                .withBootstrapServers(options.getBootstrapServer())
+//                                .withTopics(Collections.singletonList(options.getInputTopic()))
+                                .withTopicPartitions(IntStream.range(0, 4)
+                                        .mapToObj(i -> new TopicPartition(options.getInputTopic(), i))
+                                        .toList())
+                                .withKeyDeserializerAndCoder(
+                                        ByteArrayDeserializer.class, NullableCoder.of(ByteArrayCoder.of()))
+                                .withValueDeserializerAndCoder(ByteArrayDeserializer.class, ByteArrayCoder.of())
+                                .withConsumerConfigUpdates(auth)
+                                .withoutMetadata())
                 .apply("Write to Kafka",
                         KafkaIO.<byte[], byte[]>write()
-                            .withBootstrapServers(options.getBootstrapServer())
-                            .withTopic(options.getOutputTopic())
-                            .withKeySerializer(ByteArraySerializer.class)
-                            .withValueSerializer(ByteArraySerializer.class)
-                            .withProducerConfigUpdates(auth));
+                                .withBootstrapServers(options.getBootstrapServer())
+                                .withTopic(options.getOutputTopic())
+                                .withKeySerializer(ByteArraySerializer.class)
+                                .withValueSerializer(ByteArraySerializer.class)
+                                .withProducerConfigUpdates(auth));
         pipeline.run().waitUntilFinish();
     }
 
