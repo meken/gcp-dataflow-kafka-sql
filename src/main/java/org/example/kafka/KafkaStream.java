@@ -24,8 +24,6 @@ import java.util.Map;
 import java.util.stream.IntStream;
 
 public class KafkaStream {
-
-
     public interface KafkaStreamOptions extends StreamingOptions {
         @Description("Kafka input/source topic")
         @Default.String("src")
@@ -61,15 +59,6 @@ public class KafkaStream {
     static void runKafkaStream(KafkaStream.KafkaStreamOptions options) {
         Pipeline pipeline = Pipeline.create(options);
 
-        Map<String, Object> auth = Map.of(
-            "security.protocol", "SASL_SSL",
-            "sasl.mechanism", "OAUTHBEARER",
-            "sasl.login.callback.handler.class",
-                    "com.google.cloud.hosted.kafka.auth.GcpLoginCallbackHandler",
-            "sasl.jaas.config",
-                    "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;"
-        );
-
         PCollectionView<Map<String, Integer>> filterData = pipeline
                 .apply("Read from GCS filter data",
                         TextIO.read().from(options.getFilterFileURI()))
@@ -89,7 +78,7 @@ public class KafkaStream {
                                 .withKeyDeserializerAndCoder(
                                         ByteArrayDeserializer.class, NullableCoder.of(ByteArrayCoder.of()))
                                 .withValueDeserializerAndCoder(ByteArrayDeserializer.class, ByteArrayCoder.of())
-                                .withConsumerConfigUpdates(auth)
+                                .withGCPApplicationDefaultCredentials()
                                 .withoutMetadata())
                 .apply("Filter",
                         ParDo.of(new DoFn<KV<byte[], byte[]>, KV<byte[], byte[]>>() {
@@ -109,7 +98,7 @@ public class KafkaStream {
                                 .withTopic(options.getOutputTopic())
                                 .withKeySerializer(ByteArraySerializer.class)
                                 .withValueSerializer(ByteArraySerializer.class)
-                                .withProducerConfigUpdates(auth));
+                                .withGCPApplicationDefaultCredentials());
         pipeline.run().waitUntilFinish();
     }
 
