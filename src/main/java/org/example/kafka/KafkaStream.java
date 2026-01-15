@@ -1,5 +1,7 @@
 package org.example.kafka;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
@@ -13,13 +15,23 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.View;
+import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.joda.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
 
@@ -48,25 +60,98 @@ public class KafkaStream {
         String getBootstrapServer();
 
         void setBootstrapServer(String value);
-        
-        @Description("Filter file GCS URI")
-        @Default.String("gs://meken-dataflow-test-01/filtered-prime-10M.txt")
-        String getFilterFileURI();
-        
-        void setFilterFileURI(String value);
+
+        @Description("JDBC url for the filter database, jdbc:postgresql:///<DB_NAME>")
+        @Default.String("jdbc:postgresql:///filter")
+        String getJdbcUrl();
+
+        @Description("Cloud SQL Instance Connection Name, e.g., project:region:instance")
+        @Default.String("meken-dataflow-test-01:us-central1:sql-filter")
+        String getDatabaseInstanceName();
+
+        @Description("Cloud SQL instance user service account")
+        @Default.String("sac-dataflow-worker@meken-dataflow-test-01.iam.gserviceaccount.com")
+        String getDatabaseUser();
+    }
+
+    public static class CloudSqlFilter extends DoFn<KV<byte[], byte[]>, KV<byte[], byte[]>> {
+        private static final Logger LOG = LoggerFactory.getLogger(CloudSqlFilter.class);
+
+        private final String jdbcUrl;
+        private final String databaseInstanceName;
+        private final String databaseUser;
+
+        private transient List<KV<byte[], byte[]>> batch;
+        private transient HikariDataSource dataSource;
+
+        public CloudSqlFilter(KafkaStreamOptions options) {
+            this.jdbcUrl = options.getJdbcUrl();
+            this.databaseInstanceName = options.getDatabaseInstanceName();
+            this.databaseUser = options.getDatabaseUser();
+        }
+
+        @Setup
+        public void setup() {
+            HikariConfig config = new HikariConfig();
+            config.setUsername(this.databaseUser);
+            config.setDataSourceClassName("com.zaxxer.hikari.util.DriverDataSource");
+            config.addDataSourceProperty("url", this.jdbcUrl);
+            config.addDataSourceProperty("socketFactory", "com.google.cloud.sql.postgres.SocketFactory");
+            config.addDataSourceProperty("cloudSqlInstance", this.databaseInstanceName);
+            config.addDataSourceProperty("enableIamAuth", "true");
+
+            config.setMaximumPoolSize(5);
+            this.dataSource = new HikariDataSource(config);
+        }
+
+        @StartBundle
+        public void startBundle() {
+            this.batch = new ArrayList<>();
+        }
+
+        @ProcessElement
+        public void processElement(@Element KV<byte[], byte[]> element) {
+            this.batch.add(element);
+        }
+
+        @FinishBundle
+        public void finishBundle(FinishBundleContext c) {
+            if (batch.isEmpty()) {
+                return;
+            }
+
+            List<String> lookupValues = batch.stream().map(kv -> new String(kv.getValue())).toList();
+            List<String> placeholders = batch.stream().map(kv -> "?").toList();
+            StringBuilder query = new StringBuilder();
+            query.append("SELECT value FROM filter_data WHERE value IN (");
+            query.append(String.join(",", placeholders));
+            query.append(")");
+
+            try (Connection conn = dataSource.getConnection()) {
+                PreparedStatement ps = conn.prepareStatement(query.toString());
+//                lookupValues.forEach((value, index) -> ps.setString(index + 1, value));
+                for (int i = 0; i < lookupValues.size(); i++) {
+                    ps.setString(i + 1, lookupValues.get(i));
+                }
+                ResultSet rs = ps.executeQuery();
+                while (rs.next()) {
+                    c.output(KV.of(null, rs.getString("value").getBytes()), Instant.now(), GlobalWindow.INSTANCE);
+                }
+            } catch (SQLException e) {
+                LOG.warn(e.getMessage());
+            }
+        }
+
+        @Teardown
+        public void teardown() {
+            if (dataSource != null) {
+                dataSource.close();
+            }
+        }
     }
 
     static void runKafkaStream(KafkaStream.KafkaStreamOptions options) {
         Pipeline pipeline = Pipeline.create(options);
-
-        PCollectionView<Map<String, Integer>> filterData = pipeline
-                .apply("Read from GCS filter data",
-                        TextIO.read().from(options.getFilterFileURI()))
-                .apply("Map to KV pairs", MapElements
-                        .into(TypeDescriptors.kvs(TypeDescriptors.strings(), TypeDescriptors.integers()))
-                        .via(input -> KV.of(input, 1)))
-                .apply(View.asMap());
-
 
         pipeline
                 .apply("Read from Kafka",
@@ -81,17 +166,7 @@ public class KafkaStream {
                                 .withGCPApplicationDefaultCredentials()
                                 .withoutMetadata())
                 .apply("Filter",
-                        ParDo.of(new DoFn<KV<byte[], byte[]>, KV<byte[], byte[]>>() {
-                            @ProcessElement
-                            public void processElement(
-                                    ProcessContext c,
-                                    @Element KV<byte[], byte[]> element,
-                                    @SideInput("filter") Map<String, Integer> filterData) {
-                                if (filterData.containsKey(new String(element.getValue()))) {
-                                    c.output(c.element());
-                                }
-                            }
-                        }).withSideInput("filter", filterData))
+                        ParDo.of(new CloudSqlFilter(options)))
                 .apply("Write to Kafka",
                         KafkaIO.<byte[], byte[]>write()
                                 .withBootstrapServers(options.getBootstrapServer())
