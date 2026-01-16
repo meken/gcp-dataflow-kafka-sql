@@ -12,12 +12,10 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.StreamingOptions;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.joda.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,10 +23,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.stream.IntStream;
 
+@SuppressWarnings("ALL")
 public class KafkaStream {
     public interface KafkaStreamOptions extends StreamingOptions {
         @Description("Kafka input/source topic")
@@ -82,7 +79,6 @@ public class KafkaStream {
         private final String databaseInstanceName;
         private final String databaseUser;
 
-        private transient List<KV<byte[], byte[]>> batch;
         private transient HikariDataSource dataSource;
 
         public CloudSqlFilter(KafkaStreamOptions options) {
@@ -93,7 +89,6 @@ public class KafkaStream {
 
         @Setup
         public void setup() {
-            long start = System.currentTimeMillis();
             HikariConfig config = new HikariConfig();
             config.setUsername(this.databaseUser);
             config.setPassword("42"); // ignored
@@ -107,51 +102,30 @@ public class KafkaStream {
 
             config.setMaximumPoolSize(16);
             this.dataSource = new HikariDataSource(config);
-            LOG.info("### Datasource initialzed in {} ms", System.currentTimeMillis() - start);
-        }
-
-        @StartBundle
-        public void startBundle() {
-            this.batch = new ArrayList<>();
         }
 
         @ProcessElement
-        public void processElement(@Element KV<byte[], byte[]> element) {
-            this.batch.add(element);
-        }
+        public void processElement(ProcessContext c) {
+            KV<byte[], byte[]> element = c.element();
+            String lookupValue = new String(element.getValue());
 
-        @FinishBundle
-        public void finishBundle(FinishBundleContext c) {
-            if (batch.isEmpty()) {
-                return;
-            }
-            long start = System.currentTimeMillis();
-            List<String> lookupValues = batch.stream().map(kv -> new String(kv.getValue())).toList();
-            List<String> placeholders = batch.stream().map(kv -> "?").toList();
-            StringBuilder query = new StringBuilder();
-            query.append("SELECT values FROM filter_data WHERE values IN (");
-            query.append(String.join(",", placeholders));
-            query.append(")");
+            String query = "SELECT values FROM filter_data WHERE values = ?";
 
             try (Connection conn = dataSource.getConnection()) {
-                PreparedStatement ps = conn.prepareStatement(query.toString());
-//                lookupValues.forEach((value, index) -> ps.setString(index + 1, value));
-                for (int i = 0; i < lookupValues.size(); i++) {
-                    ps.setString(i + 1, lookupValues.get(i));
-                }
+                PreparedStatement ps = conn.prepareStatement(query);
+                ps.setString(1, lookupValue);
                 ResultSet rs = ps.executeQuery();
-                while (rs.next()) {
-                    c.output(KV.of(null, rs.getString("values").getBytes()), Instant.now(), GlobalWindow.INSTANCE);
+                if (rs.next()) {
+                    c.output(KV.of(null, rs.getString("values").getBytes()));
                 }
             } catch (SQLException e) {
                 LOG.warn(e.getMessage());
             }
-            LOG.debug("Filtered {} elements in {} ms", batch.size(), System.currentTimeMillis() - start);
         }
+
 
         @Teardown
         public void teardown() {
-            LOG.info("### Closing datasource");
             if (dataSource != null) {
                 dataSource.close();
             }
