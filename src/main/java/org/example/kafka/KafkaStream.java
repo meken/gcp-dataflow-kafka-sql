@@ -93,6 +93,7 @@ public class KafkaStream {
 
         @Setup
         public void setup() {
+            long start = System.currentTimeMillis();
             HikariConfig config = new HikariConfig();
             config.setUsername(this.databaseUser);
             config.setPassword("42"); // ignored
@@ -106,7 +107,7 @@ public class KafkaStream {
 
             config.setMaximumPoolSize(16);
             this.dataSource = new HikariDataSource(config);
-            LOG.info("Datasource initialzed");
+            LOG.info("### Datasource initialzed in {} ms", System.currentTimeMillis() - start);
         }
 
         @StartBundle
@@ -124,7 +125,7 @@ public class KafkaStream {
             if (batch.isEmpty()) {
                 return;
             }
-
+            long start = System.currentTimeMillis();
             List<String> lookupValues = batch.stream().map(kv -> new String(kv.getValue())).toList();
             List<String> placeholders = batch.stream().map(kv -> "?").toList();
             StringBuilder query = new StringBuilder();
@@ -145,11 +146,12 @@ public class KafkaStream {
             } catch (SQLException e) {
                 LOG.warn(e.getMessage());
             }
+            LOG.debug("Filtered {} elements in {} ms", batch.size(), System.currentTimeMillis() - start);
         }
 
         @Teardown
         public void teardown() {
-            LOG.info("Closing datasource");
+            LOG.info("### Closing datasource");
             if (dataSource != null) {
                 dataSource.close();
             }
