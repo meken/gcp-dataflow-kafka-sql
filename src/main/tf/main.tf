@@ -175,8 +175,8 @@ resource "google_project_iam_member" "dataflow_worker_sa_roles" {
     "roles/storage.admin",
     "roles/managedkafka.client",
     "roles/pubsub.editor",
-    # "roles/artifactregistry.reader"
-    "roles/cloudsql.instanceUser"
+    "roles/cloudsql.instanceUser",
+    "roles/cloudsql.client"
   ])
   role   = each.key
   member = "serviceAccount:${google_service_account.dataflow_worker_sa.email}"
