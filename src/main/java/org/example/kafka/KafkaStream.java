@@ -5,20 +5,15 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
-import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.StreamingOptions;
 import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.values.KV;
-import org.apache.beam.sdk.values.PCollectionView;
-import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
@@ -32,7 +27,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.IntStream;
 
 public class KafkaStream {
@@ -65,13 +59,20 @@ public class KafkaStream {
         @Default.String("jdbc:postgresql:///filter")
         String getJdbcUrl();
 
+        void setJdbcUrl(String value);
+
         @Description("Cloud SQL Instance Connection Name, e.g., project:region:instance")
         @Default.String("meken-dataflow-test-01:us-central1:sql-filter")
         String getDatabaseInstanceName();
 
+        void setDatabaseInstanceName(String value);
+
         @Description("Cloud SQL instance user service account")
-        @Default.String("sac-dataflow-worker@meken-dataflow-test-01.iam.gserviceaccount.com")
+//        @Default.String("sac-dataflow-worker@meken-dataflow-test-01.iam.gserviceaccount.com")
+        @Default.String("sac-dataflow-worker@meken-dataflow-test-01.iam")
         String getDatabaseUser();
+
+        void setDatabaseUser(String value);
     }
 
     public static class CloudSqlFilter extends DoFn<KV<byte[], byte[]>, KV<byte[], byte[]>> {
@@ -94,14 +95,18 @@ public class KafkaStream {
         public void setup() {
             HikariConfig config = new HikariConfig();
             config.setUsername(this.databaseUser);
-            config.setDataSourceClassName("com.zaxxer.hikari.util.DriverDataSource");
-            config.addDataSourceProperty("url", this.jdbcUrl);
+            config.setPassword("42"); // ignored
+            config.setJdbcUrl(this.jdbcUrl);
             config.addDataSourceProperty("socketFactory", "com.google.cloud.sql.postgres.SocketFactory");
             config.addDataSourceProperty("cloudSqlInstance", this.databaseInstanceName);
             config.addDataSourceProperty("enableIamAuth", "true");
+            config.addDataSourceProperty("sslmode", "disable");
+            config.addDataSourceProperty("ipTypes", "PRIVATE");
+//            config.addDataSourceProperty("cloudSqlRefreshStrategy", "lazy");
 
-            config.setMaximumPoolSize(5);
+            config.setMaximumPoolSize(16);
             this.dataSource = new HikariDataSource(config);
+            LOG.info("Datasource initialzed");
         }
 
         @StartBundle
@@ -123,7 +128,7 @@ public class KafkaStream {
             List<String> lookupValues = batch.stream().map(kv -> new String(kv.getValue())).toList();
             List<String> placeholders = batch.stream().map(kv -> "?").toList();
             StringBuilder query = new StringBuilder();
-            query.append("SELECT value FROM filter_data WHERE value IN (");
+            query.append("SELECT values FROM filter_data WHERE values IN (");
             query.append(String.join(",", placeholders));
             query.append(")");
 
@@ -135,7 +140,7 @@ public class KafkaStream {
                 }
                 ResultSet rs = ps.executeQuery();
                 while (rs.next()) {
-                    c.output(KV.of(null, rs.getString("value").getBytes()), Instant.now(), GlobalWindow.INSTANCE);
+                    c.output(KV.of(null, rs.getString("values").getBytes()), Instant.now(), GlobalWindow.INSTANCE);
                 }
             } catch (SQLException e) {
                 LOG.warn(e.getMessage());
@@ -144,6 +149,7 @@ public class KafkaStream {
 
         @Teardown
         public void teardown() {
+            LOG.info("Closing datasource");
             if (dataSource != null) {
                 dataSource.close();
             }

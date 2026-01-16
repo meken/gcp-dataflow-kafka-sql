@@ -1,0 +1,39 @@
+#!/bin/bash
+
+export PROJECT_ID=${gcp_project_id}
+export REGION=${gcp_region}
+export CLUSTER_ID=${cluster_id}
+
+# Suppressing some warnings
+echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+
+# Installing the OS dependencies
+apt-get install -y default-jre wget unzip
+
+wget -O kafka_2.13-3.7.2.tgz https://dlcdn.apache.org/kafka/3.7.2/kafka_2.13-3.7.2.tgz
+tar -xzf kafka_2.13-3.7.2.tgz -C /opt/
+
+export KAFKA_HOME="/opt/kafka_2.13-3.7.2"
+wget https://github.com/googleapis/managedkafka/releases/download/v1.0.5/release-and-dependencies.zip
+unzip -n -j release-and-dependencies.zip -d $KAFKA_HOME/libs/
+
+chmod -R +rx $KAFKA_HOME
+
+cat <<'EOF' >> /etc/profile
+export KAFKA_HOME="/opt/kafka_2.13-3.7.2"
+export PATH=$PATH:$KAFKA_HOME/bin
+export CLASSPATH=$CLASSPATH:$KAFKA_HOME/libs/release-and-dependencies/*:$KAFKA_HOME/libs/release-and-dependencies/dependency/*
+EOF
+
+cat <<EOF >> /etc/profile
+export BOOTSTRAP="bootstrap.$CLUSTER_ID.$REGION.managedkafka.$PROJECT_ID.cloud.goog:9092"
+EOF
+
+cat <<EOF >> $KAFKA_HOME/config/client.properties
+security.protocol=SASL_SSL
+sasl.mechanism=OAUTHBEARER
+sasl.login.callback.handler.class=com.google.cloud.hosted.kafka.auth.GcpLoginCallbackHandler
+sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
+EOF
+
+echo "Startup script finished successfully"
