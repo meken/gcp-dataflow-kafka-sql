@@ -5,7 +5,7 @@ java -jar target/word-count-beam-bundled-0.1.jar \
   --region=us-central1 \
   --gcpTempLocation=gs://meken-dataflow-test-01/temp/ \
   --stagingLocation=gs://meken-dataflow-test-01/staging/ \
-  --serviceAccount=sac-dataflow-worker@meken-dataflow-test-01.iam.gserviceaccount.com \
+  --serviceAccount=sa-dataflow-worker@meken-dataflow-test-01.iam.gserviceaccount.com \
   --dataflowServiceOptions=streaming_mode_at_least_once \
   --dataflowServiceOptions=enable_preflight_validation=false \
   --enableStreamingEngine=true \

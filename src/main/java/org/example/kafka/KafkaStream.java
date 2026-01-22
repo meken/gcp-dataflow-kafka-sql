@@ -66,7 +66,7 @@ public class KafkaStream {
 
         @Description("Cloud SQL instance user service account")
 //        @Default.String("sac-dataflow-worker@meken-dataflow-test-01.iam.gserviceaccount.com")
-        @Default.String("sac-dataflow-worker@meken-dataflow-test-01.iam")
+        @Default.String("sa-dataflow-worker@meken-dataflow-test-01.iam")
         String getDatabaseUser();
 
         void setDatabaseUser(String value);

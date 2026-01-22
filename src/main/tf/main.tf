@@ -120,7 +120,8 @@ resource "google_project_iam_member" "kafka_vm_sa_roles" {
   for_each = toset([
     "roles/managedkafka.client",
     "roles/iam.serviceAccountTokenCreator",
-    "roles/iam.serviceAccountOpenIdTokenCreator"
+    "roles/iam.serviceAccountOpenIdTokenCreator",
+    "roles/cloudsql.admin"
   ])
   role   = each.key
   member = "serviceAccount:${google_service_account.kafka_vm_sa.email}"
@@ -152,9 +153,12 @@ resource "google_compute_instance" "kafka_vm" {
   }
 
   metadata_startup_script = templatefile("${path.module}/setup.tftpl", {
-    gcp_project_id = var.gcp_project_id,
-    gcp_region     = var.gcp_region,
-    cluster_id     = google_managed_kafka_cluster.cluster.cluster_id
+    gcp_project_id    = var.gcp_project_id,
+    gcp_region        = var.gcp_region,
+    cluster_id        = google_managed_kafka_cluster.cluster.cluster_id
+    database_name     = google_sql_database_instance.sql_filter_db.name
+    database_root_pwd = random_string.sql_password.result
+    database_sa_usr   = google_sql_user.filter_db_sa_user.name
   })
 
   depends_on = [
@@ -164,7 +168,7 @@ resource "google_compute_instance" "kafka_vm" {
 }
 
 resource "google_service_account" "dataflow_worker_sa" {
-  account_id   = "sac-dataflow-worker"
+  account_id   = "sa-dataflow-worker"
   display_name = "Dataflow Worker Service Account"
 }
 
@@ -196,9 +200,16 @@ resource "google_service_networking_connection" "default" {
   reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
 }
 
+resource "random_string" "sql_password" {
+  length           = 12
+  special          = true
+  override_special = "._+-"
+}
+
 resource "google_sql_database_instance" "sql_filter_db" {
   name                = "sql-filter"
   database_version    = "POSTGRES_18"
+  root_password       = random_string.sql_password.result
   deletion_protection = false
   settings {
     edition   = "ENTERPRISE"
@@ -212,6 +223,7 @@ resource "google_sql_database_instance" "sql_filter_db" {
     }
 
     ip_configuration {
+      ipv4_enabled    = false
       private_network = data.google_compute_network.default_network.self_link
     }
   }

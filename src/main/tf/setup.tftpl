@@ -3,12 +3,17 @@
 export PROJECT_ID=${gcp_project_id}
 export REGION=${gcp_region}
 export CLUSTER_ID=${cluster_id}
+export DB_ROOT_USR="postgres"
+export DB_ROOT_PWD=${database_root_pwd}
+export DB_NAME=${database_name}
+export DB_SA_USR=${database_sa_usr}
+
 
 # Suppressing some warnings
 echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
 # Installing the OS dependencies
-apt-get install -y default-jre wget unzip
+apt-get install -y default-jre wget unzip postgresql-client tmux
 
 wget -O kafka_2.13-3.7.2.tgz https://dlcdn.apache.org/kafka/3.7.2/kafka_2.13-3.7.2.tgz
 tar -xzf kafka_2.13-3.7.2.tgz -C /opt/
@@ -35,5 +40,34 @@ sasl.mechanism=OAUTHBEARER
 sasl.login.callback.handler.class=com.google.cloud.hosted.kafka.auth.GcpLoginCallbackHandler
 sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
 EOF
+
+wget -O cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.20.0/cloud-sql-proxy.linux.amd64
+chmod +x cloud-sql-proxy
+./cloud-sql-proxy --private-ip "$PROJECT_ID:$REGION:$DB_NAME" &
+
+sleep 5
+
+CONN_STR="host=127.0.0.1 port=5432 sslmode=disable dbname=$DB_NAME user=$DB_ROOT_USR password=$DB_ROOT_PWD"
+
+cat <<EOF >> /tmp/setup.sql
+GRANT pg_read_all_data TO "$DB_SA_USR";
+CREATE TABLE filter_data (
+  values varchar(16)
+);
+EOF
+
+psql "$CONN_STR" < /tmp/setup.sql
+
+yes | gcloud sql import csv "$DB_NAME" \
+  --database filter \
+  --table filter_data \
+  gs://meken-dataflow-test-01/filtered-prime-10M.txt
+
+cat <<EOF >> /tmp/index.sql
+CREATE INDEX "idx_filter_data_values" ON filter_data (values);
+EOF
+
+psql "$CONN_STR" < /tmp/index.sql
+
 
 echo "Startup script finished successfully"

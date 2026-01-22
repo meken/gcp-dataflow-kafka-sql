@@ -21,7 +21,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.example</groupId>
-  <artifactId>word-count-beam</artifactId>
+  <artifactId>dataflow-kafka-stream</artifactId>
   <version>0.1</version>
 
   <packaging>jar</packaging>
@@ -32,8 +32,6 @@
     <bigquery.version>v2-rev20250706-2.0.0</bigquery.version>
     <google-api-client.version>2.0.0</google-api-client.version>
     <guava.version>33.1.0-jre</guava.version>
-    <hamcrest.version>2.1</hamcrest.version>
-    <jackson.version>2.15.4</jackson.version>
     <joda.version>2.14.0</joda.version>
     <junit.version>4.13.1</junit.version>
     <kafka.version>3.8.0</kafka.version>
@@ -42,14 +40,9 @@
     <maven-exec-plugin.version>1.6.0</maven-exec-plugin.version>
     <maven-jar-plugin.version>3.0.2</maven-jar-plugin.version>
     <maven-shade-plugin.version>3.1.0</maven-shade-plugin.version>
-    <mockito.version>4.11.0</mockito.version>
     <pubsub.version>v1-rev20220904-2.0.0</pubsub.version>
     <slf4j.version>2.0.16</slf4j.version>
-    <spark.version>3.5.0</spark.version>
-    <hadoop.version>3.4.2</hadoop.version>
     <maven-surefire-plugin.version>3.0.0-M5</maven-surefire-plugin.version>
-    <nemo.version>0.1</nemo.version>
-    <flink.artifact.name>beam-runners-flink-1.20</flink.artifact.name>
   </properties>
 
   <repositories>
