@@ -25,7 +25,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.stream.IntStream;
 
-@SuppressWarnings("ALL")
 public class KafkaStream {
     public interface KafkaStreamOptions extends StreamingOptions {
         @Description("Kafka input/source topic")
@@ -47,7 +46,6 @@ public class KafkaStream {
         void setPartitionCount(int value);
 
         @Description("Bootstrap server")
-        @Default.String("bootstrap.kafka-cluster.us-central1.managedkafka.meken-dataflow-test-01.cloud.goog:9092")
         String getBootstrapServer();
 
         void setBootstrapServer(String value);
@@ -59,14 +57,11 @@ public class KafkaStream {
         void setJdbcUrl(String value);
 
         @Description("Cloud SQL Instance Connection Name, e.g., project:region:instance")
-        @Default.String("meken-dataflow-test-01:us-central1:sql-filter")
         String getDatabaseInstanceName();
 
         void setDatabaseInstanceName(String value);
 
         @Description("Cloud SQL instance user service account")
-//        @Default.String("sac-dataflow-worker@meken-dataflow-test-01.iam.gserviceaccount.com")
-        @Default.String("sa-dataflow-worker@meken-dataflow-test-01.iam")
         String getDatabaseUser();
 
         void setDatabaseUser(String value);

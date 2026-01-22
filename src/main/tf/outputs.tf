@@ -12,5 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 output "project_id" {
-    value = var.gcp_project_id
+  value = var.gcp_project_id
+}
+
+output "region" {
+  value = var.gcp_region
+}
+
+output "storage_bucket" {
+  value = google_storage_bucket.bucket.name
+}
+
+output "database_instance" {
+  value = google_sql_database_instance.sql_filter_db.name
+}
+
+output "database_root_password" {
+  value     = google_sql_database_instance.sql_filter_db.root_password
+  sensitive = true
+}
+
+output "database_user_sa" {
+  value = google_sql_user.filter_db_sa_user.name
+}
+
+output "dataflow_worker_sa" {
+  value = google_service_account.dataflow_worker_sa.email
+}
+
+output "kafka_cluster" {
+  value = google_managed_kafka_cluster.cluster.cluster_id
+}
+
+output "kafka_src_topic_partition_count" {
+  value = google_managed_kafka_topic.src.partition_count
 }

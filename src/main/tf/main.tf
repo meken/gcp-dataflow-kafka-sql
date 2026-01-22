@@ -72,6 +72,12 @@ data "google_compute_network" "default_network" {
   ]
 }
 
+resource "google_storage_bucket" "bucket" {
+  name                        = var.gcp_project_id
+  location                    = var.gcp_region
+  uniform_bucket_level_access = true
+}
+
 locals {
   kafka_vcpus = 7
 }
@@ -155,6 +161,7 @@ resource "google_compute_instance" "kafka_vm" {
   metadata_startup_script = templatefile("${path.module}/setup.tftpl", {
     gcp_project_id    = var.gcp_project_id,
     gcp_region        = var.gcp_region,
+    gcs_bucket        = google_storage_bucket.bucket.name,
     cluster_id        = google_managed_kafka_cluster.cluster.cluster_id
     database_name     = google_sql_database_instance.sql_filter_db.name
     database_root_pwd = random_string.sql_password.result

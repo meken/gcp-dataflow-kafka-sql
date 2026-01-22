@@ -2,6 +2,7 @@
 
 export PROJECT_ID=${gcp_project_id}
 export REGION=${gcp_region}
+export BUCKET=${gcs_bucket}
 export CLUSTER_ID=${cluster_id}
 export DB_ROOT_USR="postgres"
 export DB_ROOT_PWD=${database_root_pwd}
@@ -47,27 +48,30 @@ chmod +x cloud-sql-proxy
 
 sleep 5
 
-CONN_STR="host=127.0.0.1 port=5432 sslmode=disable dbname=$DB_NAME user=$DB_ROOT_USR password=$DB_ROOT_PWD"
+CONN_STR="host=127.0.0.1 port=5432 sslmode=disable dbname=filter user=$DB_ROOT_USR password=$DB_ROOT_PWD"
 
 cat <<EOF >> /tmp/setup.sql
 GRANT pg_read_all_data TO "$DB_SA_USR";
 CREATE TABLE filter_data (
-  values varchar(16)
+  values varchar(255)
 );
 EOF
 
 psql "$CONN_STR" < /tmp/setup.sql
 
-yes | gcloud sql import csv "$DB_NAME" \
-  --database filter \
-  --table filter_data \
-  gs://meken-dataflow-test-01/filtered-prime-10M.txt
-
-cat <<EOF >> /tmp/index.sql
-CREATE INDEX "idx_filter_data_values" ON filter_data (values);
-EOF
-
-psql "$CONN_STR" < /tmp/index.sql
+#wget -O primes-10M.txt.gz https://github.com/meken/gcp-dataflow-kafka-sql/releases/download/v1.0/primes-10M.txt.gz
+#gcloud storage cp primes-10M.txt.gz "gs://$BUCKET/"
+#
+#yes | gcloud sql import csv "$DB_NAME" \
+#  --database filter \
+#  --table filter_data \
+#  "gs://$BUCKET/primes-10M.txt.gz"
+#
+#cat <<EOF >> /tmp/index.sql
+#CREATE INDEX "idx_filter_data_values" ON filter_data (values);
+#EOF
+#
+#psql "$CONN_STR" < /tmp/index.sql
 
 
 echo "Startup script finished successfully"
