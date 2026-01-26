@@ -65,6 +65,12 @@ public class KafkaStream {
         String getDatabaseUser();
 
         void setDatabaseUser(String value);
+
+        @Description("Connection pool size")
+        @Default.Integer(16)
+        int getConnectionPoolSize();
+
+        void setConnectionPoolSize(int value);
     }
 
     public static class CloudSqlFilter extends DoFn<KV<byte[], byte[]>, KV<byte[], byte[]>> {
@@ -73,6 +79,7 @@ public class KafkaStream {
         private final String jdbcUrl;
         private final String databaseInstanceName;
         private final String databaseUser;
+        private final int connectionPoolSize;
 
         private transient HikariDataSource dataSource;
 
@@ -80,6 +87,7 @@ public class KafkaStream {
             this.jdbcUrl = options.getJdbcUrl();
             this.databaseInstanceName = options.getDatabaseInstanceName();
             this.databaseUser = options.getDatabaseUser();
+            this.connectionPoolSize = options.getConnectionPoolSize();
         }
 
         @Setup
@@ -95,7 +103,7 @@ public class KafkaStream {
             config.addDataSourceProperty("ipTypes", "PRIVATE");
 //            config.addDataSourceProperty("cloudSqlRefreshStrategy", "lazy");
 
-            config.setMaximumPoolSize(16);
+            config.setMaximumPoolSize(this.connectionPoolSize);
             this.dataSource = new HikariDataSource(config);
         }
 
