@@ -64,6 +64,7 @@ sasl.login.callback.handler.class=com.google.cloud.hosted.kafka.auth.GcpLoginCal
 sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
 EOF
 
+# Setting up the database
 wget -O cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.20.0/cloud-sql-proxy.linux.amd64
 chmod +x cloud-sql-proxy
 ./cloud-sql-proxy --private-ip "$PROJECT_ID:$REGION:$DB_NAME" &
@@ -81,19 +82,34 @@ EOF
 
 psql "$CONN_STR" < /tmp/setup.sql
 
-#wget -O primes-10M.txt.gz https://github.com/meken/gcp-dataflow-kafka-sql/releases/download/v1.0/primes-10M.txt.gz
-#gcloud storage cp primes-10M.txt.gz "gs://$BUCKET/"
-#
-#yes | gcloud sql import csv "$DB_NAME" \
-#  --database filter \
-#  --table filter_data \
-#  "gs://$BUCKET/primes-10M.txt.gz"
-#
-#cat <<EOF >> /tmp/index.sql
-#CREATE INDEX "idx_filter_data_values" ON filter_data (values);
-#EOF
-#
-#psql "$CONN_STR" < /tmp/index.sql
+# Importing the sample (filter) data
+wget -O primes-10M.txt.gz https://github.com/meken/gcp-dataflow-kafka-sql/releases/download/v1.0/primes-10M.txt.gz
+gcloud storage cp primes-10M.txt.gz "gs://$BUCKET/"
 
+CLOUD_SQL_SA=$(gcloud sql instances describe "$DB_NAME" \
+  --project="$PROJECT_ID" \
+  --format="value(serviceAccountEmailAddress)")
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
+    --member="serviceAccount:$CLOUD_SQL_SA" \
+    --role=roles/storage.objectViewer
+
+sleep 30
+
+yes | gcloud sql import csv "$DB_NAME" \
+  --database filter \
+  --table filter_data \
+  "gs://$BUCKET/primes-10M.txt.gz"
+
+cat <<EOF >> /tmp/index.sql
+CREATE INDEX "idx_filter_data_values" ON filter_data (values);
+EOF
+
+psql "$CONN_STR" < /tmp/index.sql
+
+# Installing UV for all
+curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh
+
+# Getting the client files on local machine
+wget -O /opt/client.zip https://github.com/meken/gcp-dataflow-kafka-sql/releases/download/v1.0/client.zip
 
 echo "Startup script finished successfully"

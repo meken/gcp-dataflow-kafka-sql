@@ -136,6 +136,7 @@ resource "google_project_iam_member" "kafka_vm_sa_roles" {
     "roles/managedkafka.client",
     "roles/iam.serviceAccountTokenCreator",
     "roles/iam.serviceAccountOpenIdTokenCreator",
+    "roles/storage.admin",
     "roles/cloudsql.admin"
   ])
   role   = each.key
