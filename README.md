@@ -7,39 +7,11 @@ This is a sample repository that illustrates how to read/write from/to Kafka top
 
 ## Setup
 
-This example comes with Terraform resources to create a Kafka cluster on Google Cloud, a Google Cloud SQL instance and a Client VM that can be use to access the Kafka cluster (and/or publish/subscribe to/from the Kafka cluster). During the setup of the Client VM, database access rights are granted to the Dataflow worker service account.
+This example comes with Terraform resources to create a Kafka cluster on Google Cloud, a Google Cloud SQL instance and a Client VM that can be use to access the Kafka cluster, and/or publish/subscribe to/from the Kafka cluster. During the setup of the Client VM, database access rights are granted to the Dataflow worker service account.
 
-Running the Terraform should be straight forward, just cd into the `src/main/tf` directory and run the required commands. If your project doesn't have a default network, it can create that as well, check the details of `variables.tf` for more information. Applying the Terraform will take ~15 minutes to complete. 
+Running the Terraform scripts should be straight forward, just cd into the `src/main/tf` directory and run the required commands. If your project doesn't have a default network, there's an option to create that too, check the details of `variables.tf` for more information. Applying the Terraform scripts will take ~15 minutes to complete. 
 
-The pipeline code expects a table called `filter_data` in the `filter` database with a single column `values`. For each message that the pipeline processes, a SQL query is fired on this table to check if the message (value) exists in this table. The dataset and the table are created during the setup. You'll need to populate the table with your data. This can be done by importing a csv file from Google Cloud Storage.
-
-First we need to grant the required permissions to the Cloud SQL Service Agent:
-
-```shell
-cd src/main/tf
-PROJECT_ID=`terraform output --raw project_id`
-DB_NAME=`terraform output --raw database_instance`
-BUCKET=`terraform output --raw storage_bucket`
-CLOUD_SQL_SA=`gcloud sql instances describe $DB_NAME \
-  --project=$PROJECT_ID \
-  --format="value(serviceAccountEmailAddress)"`
-gcloud storage buckets add-iam-policy-binding gs://$BUCKET \
-    --member=serviceAccount:$CLOUD_SQL_SA \
-    --role=roles/storage.objectViewer
-```
-
-```shell
-gcloud sql import csv $DB_NAME \
-  --project=$PROJECT_ID \
-  --database filter \
-  --table filter_data \
-  gs://$BUCKET/primes-10M.txt.gz
-```
-
-Once you have the table populated, it makes sense to create an index on it, either through Google Cloud Console, or through `psql` (preferably after setting up Google Cloud SQL Auth Proxy, see `setup.tftpl` for an example)
-```shell
-CREATE INDEX "idx_filter_data_values" ON filter_data (values);
-```
+The pipeline code expects a table called `filter_data` in the `filter` database with a single column `values`. For each message that the pipeline processes, a SQL query is fired on this table to check if the message (value) exists in this table. The dataset and the table are created and populated with sample data, during the setup. Also a sample (Python) client is put on the Client VM for generating the messages and analyzing the results (see [Client code section](#client-code)).
 
 ## Pipeline
 
@@ -53,19 +25,17 @@ In order to submit the pipeline, make sure that the Terraform has been applied a
 > The pipeline code has been tested with Java 21.
 
 ```shell
-# assuming that you're in src/main/tf
-PROJECT_ID=`terraform output --raw project_id`
-REGION=`terraform output --raw region`
-BUCKET=`terraform output --raw storage_bucket`
-DATAFLOW_WORKER_SA=`terraform output --raw dataflow_worker_sa`
-KAFKA_CLUSTER=`terraform output --raw kafka_cluster`
+# assuming that you're in top level 
+PROJECT_ID=`terraform -chdir=src/main/tf output --raw project_id`
+REGION=`terraform -chdir=src/main/tf output --raw region`
+BUCKET=`terraform -chdir=src/main/tf output --raw storage_bucket`
+DATAFLOW_WORKER_SA=`terraform -chdir=src/main/tf output --raw dataflow_worker_sa`
+KAFKA_CLUSTER=`terraform -chdir=src/main/tf output --raw kafka_cluster`
 BOOTSTRAP_SERVER="bootstrap.$KAFKA_CLUSTER.$REGION.managedkafka.$PROJECT_ID.cloud.goog:9092"
-PARTITION_COUNT=`terraform output --raw kafka_src_topic_partition_count`
-CLOUD_SQL_NAME=`terraform output --raw database_instance`
-CLOUD_SQL_USER=`terraform output --raw database_user_sa`
+PARTITION_COUNT=`terraform -chdir=src/main/tf output --raw kafka_src_topic_partition_count`
+CLOUD_SQL_NAME=`terraform -chdir=src/main/tf output --raw database_instance`
+CLOUD_SQL_USER=`terraform -chdir=src/main/tf output --raw database_user_sa`
 DATABASE_INSTANCE_NAME="$PROJECT_ID:$REGION:$CLOUD_SQL_NAME"
-
-cd ../../../ # go back to the top dir where pom.xml lives
 
 mvn -Pdataflow-runner \
   compile exec:java -Dexec.mainClass=org.example.kafka.KafkaStream \
@@ -89,4 +59,28 @@ mvn -Pdataflow-runner \
   --jobName=kafka-sql-kafka-v1"
 ```
 
-Once the pipeline is running you can use your own client to send messages to the Kafka cluster. Keep in mind that the messages should have the same format as the data in the database so that the filtering works as expected.
+## Client code
+
+Once the pipeline is running you can use the client on the Client VM to send messages to the Kafka cluster. You can connect to the Client VM through using `gcloud` CLI or Google Cloud Console.
+
+```shell
+VM="gce-lnx-kafka-client"
+ZONE=`gcloud compute instances list --project $PROJECT_ID  --filter="name=('$VM')" --format="value(zone)"`
+gcloud compute ssh --project $PROJECT_ID --zone $ZONE --tunnel-through-iap $VM 
+```
+
+Once the SSH connection is established, you can find the client code in `/opt` directory.
+
+```shell
+# Unzip the sample client to the 'client' directory 
+unzip -d client /opt/client.zip
+cd client
+# Install the Python dependencies in a virtual env
+uv sync
+# Publish 100 messages per second for 5 minutes
+uv run publisher.py --tps 100 --duration 300
+# Read from the source & destination topics
+uv run collect.py
+# Calculate the performance statistics
+uv run analyze.py
+```
